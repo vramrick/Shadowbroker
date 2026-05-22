@@ -842,7 +842,7 @@ describe('MessagesView first-contact trust UX', () => {
     expect(screen.queryByText(/delivery key has not reached/i)).not.toBeInTheDocument();
   });
 
-  it('removes an approved contact immediately from the visible contact list', async () => {
+  it('removes an approved contact immediately from the visible contact list', { timeout: 30_000 }, async () => {
     contactsState = {
       '!sb_remove': {
         alias: 'Remove Me',
@@ -868,18 +868,35 @@ describe('MessagesView first-contact trust UX', () => {
     // event (removeContact + setContacts + setComposeStatus + setComposeError).
     // Under CI load the resulting render-and-paint cycle has been observed
     // to take >1s, which is the default findByText timeout — that race has
-    // produced flakes on PRs #226, #237, #261, and #262 in succession.
-    // The settle window is bounded by React's reconciliation, not by any
-    // network/animation cost, so a generous timeout is the right deflake
-    // here (the failure mode this masks would be "toast never renders",
-    // which would still fail at 5s).
+    // produced flakes on PRs #226, #237, #261, #262, #265, #294, #303, and
+    // the fd7d6fa push.
+    //
+    // Two-part fix:
+    //
+    //  1. .github/workflows/ci.yml — concurrency group serialises the two
+    //     parallel ci.yml invocations (direct trigger + workflow_call from
+    //     docker-publish.yml) so they no longer starve each other for
+    //     runner CPU/RAM. That covered the SHA-pair starvation case which
+    //     was visible on PR #303 / #294.
+    //
+    //  2. This block — the per-test `timeout: 30_000` on the `it()` above
+    //     and the 10s `waitFor` timeout below. The suite-wide testTimeout
+    //     was 15s (raised in Round 7a deflake work). An earlier draft of
+    //     this fix set waitFor to 15s, but that left ZERO headroom against
+    //     the 15s per-test budget — the test ran out of clock before
+    //     waitFor could even fail. Bumping the per-test timeout to 30s
+    //     gives waitFor a real 10s window after the render/click setup
+    //     finishes.
+    //
+    // The failure mode this masks would be "toast never renders", which
+    // still fails loudly at the 10s waitFor cap.
     await waitFor(
       () => {
         expect(
           screen.getByText(/Removed contact: Remove Me\./i),
         ).toBeInTheDocument();
       },
-      { timeout: 5000, interval: 50 },
+      { timeout: 10000, interval: 50 },
     );
     expect(screen.queryByText('Remove Me')).not.toBeInTheDocument();
   });
